@@ -36,6 +36,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createEspnMcpServer = createEspnMcpServer;
 exports.startEspnMcpServer = startEspnMcpServer;
@@ -43,7 +44,6 @@ var dotenv_1 = require("dotenv");
 var mcp_js_1 = require("@modelcontextprotocol/sdk/server/mcp.js");
 var stdio_js_1 = require("@modelcontextprotocol/sdk/server/stdio.js");
 var zod_1 = require("zod");
-var client_js_1 = require("../src/client/client.js");
 var REQUIRED_ENV_VARS = ['TEAM_ID', 'LEAGUE_ID', 'ESPN_SWID', 'ESPN_S2'];
 function loadConfiguration() {
     var _a;
@@ -94,6 +94,23 @@ function buildToolResult(data) {
         ],
         structuredContent: structured
     };
+}
+var ClientCtor;
+try {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+    var bundled = require('../node.js');
+    if (bundled && bundled.Client) {
+        ClientCtor = bundled.Client;
+    }
+}
+catch (error) {
+    // Ignore missing bundle and fall back to source in test/dev environments.
+}
+if (!ClientCtor) {
+    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+    var sourceModule = require('../src/client/client.js');
+    var fallback = (_b = (_a = sourceModule === null || sourceModule === void 0 ? void 0 : sourceModule.default) !== null && _a !== void 0 ? _a : sourceModule === null || sourceModule === void 0 ? void 0 : sourceModule.Client) !== null && _b !== void 0 ? _b : sourceModule;
+    ClientCtor = fallback;
 }
 function registerTools(server, client) {
     var _this = this;
@@ -255,7 +272,7 @@ function registerTools(server, client) {
 }
 function createEspnMcpServer() {
     var config = loadConfiguration();
-    var client = new client_js_1.default({
+    var client = new ClientCtor({
         leagueId: config.leagueId,
         teamId: config.teamId,
         espnS2: config.espnS2,

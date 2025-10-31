@@ -1,15 +1,58 @@
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
-import { createEspnMcpServer } from '../../mcp/index';
-import Client from '../client/client.js';
+
+jest.mock('../../node.js', () => {
+  const createMockClient = () => ({
+    setCookies: jest.fn(),
+    getBoxscoreForWeek: jest.fn(),
+    getDraftInfo: jest.fn(),
+    getHistoricalScoreboardForWeek: jest.fn(),
+    getFreeAgents: jest.fn(),
+    getTeamsAtWeek: jest.fn(),
+    getHistoricalTeamsAtWeek: jest.fn(),
+    getNFLGamesForPeriod: jest.fn(),
+    getLeagueInfo: jest.fn()
+  });
+
+  const clients: Array<ReturnType<typeof createMockClient>> = [];
+  const Client = jest.fn(() => {
+    const client = createMockClient();
+    clients.push(client);
+    return client;
+  });
+
+  return { Client, __mockClients: clients };
+});
 
 jest.mock('dotenv', () => ({ config: jest.fn() }));
+
+import { createEspnMcpServer } from '../../mcp/index';
+
+const {
+  Client: ClientMock,
+  __mockClients: mockClients
+} = jest.requireMock('../../node.js') as {
+  Client: jest.Mock;
+  __mockClients: Array<{
+    setCookies: jest.Mock;
+    getBoxscoreForWeek: jest.Mock;
+    getDraftInfo: jest.Mock;
+    getHistoricalScoreboardForWeek: jest.Mock;
+    getFreeAgents: jest.Mock;
+    getTeamsAtWeek: jest.Mock;
+    getHistoricalTeamsAtWeek: jest.Mock;
+    getNFLGamesForPeriod: jest.Mock;
+    getLeagueInfo: jest.Mock;
+  }>;
+};
 
 const ORIGINAL_ENV = { ...process.env };
 
 describe('espn MCP server', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
+    ClientMock.mockClear();
+    mockClients.splice(0, mockClients.length);
     process.env = { ...ORIGINAL_ENV };
     process.env.TEAM_ID = '1';
     process.env.LEAGUE_ID = '2';
@@ -61,9 +104,6 @@ describe('espn MCP server', () => {
 
   it('invokes the underlying client method when a tool is called', async () => {
     const leagueInfo = { name: 'Test League' };
-    const getLeagueInfoSpy = jest
-      .spyOn(Client.prototype, 'getLeagueInfo')
-      .mockResolvedValue(leagueInfo as never);
 
     const { server } = createEspnMcpServer();
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -73,6 +113,13 @@ describe('espn MCP server', () => {
 
     await testClient.connect(clientTransport);
     await serverConnection;
+
+    const clientMock = mockClients[0];
+    if (!clientMock) {
+      throw new Error('Client mock not instantiated');
+    }
+
+    clientMock.getLeagueInfo.mockResolvedValue(leagueInfo as never);
 
     const result = await testClient.callTool({
       name: 'getLeagueInfo',
@@ -90,7 +137,7 @@ describe('espn MCP server', () => {
       firstContentText = firstContent.text;
     }
 
-    expect(getLeagueInfoSpy).toHaveBeenCalledWith({ seasonId: 2024 });
+    expect(clientMock.getLeagueInfo).toHaveBeenCalledWith({ seasonId: 2024 });
     expect(result.structuredContent).toMatchObject(leagueInfo);
     expect(firstContentText).toContain('Test League');
 

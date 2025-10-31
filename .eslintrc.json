@@ -33,7 +33,7 @@
 
     "import/extensions": "off",
     "import/no-extraneous-dependencies": [
-      "warning",
+      "warn",
       {
         "devDependencies": [
           "**/*.test.ts",

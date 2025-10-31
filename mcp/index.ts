@@ -3,7 +3,7 @@ import { config as loadEnv } from 'dotenv';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import Client from '../src/client/client.js';
+import type ClientInstance from '../src/client/client.js';
 
 type RequiredEnvVar = 'TEAM_ID' | 'LEAGUE_ID' | 'ESPN_SWID' | 'ESPN_S2';
 
@@ -72,7 +72,28 @@ function buildToolResult(data: unknown) {
   };
 }
 
-function registerTools(server: McpServer, client: Client) {
+type ClientConstructor = typeof import('../src/client/client.js').default;
+
+let ClientCtor: ClientConstructor;
+
+try {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+  const bundled = require('../node.js') as { Client?: ClientConstructor };
+  if (bundled && bundled.Client) {
+    ClientCtor = bundled.Client;
+  }
+} catch (error) {
+  // Ignore missing bundle and fall back to source in test/dev environments.
+}
+
+if (!ClientCtor) {
+  // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
+  const sourceModule = require('../src/client/client.js');
+  const fallback = sourceModule?.default ?? sourceModule?.Client ?? sourceModule;
+  ClientCtor = fallback as ClientConstructor;
+}
+
+function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'setCookies',
     {
@@ -209,7 +230,7 @@ function registerTools(server: McpServer, client: Client) {
 export function createEspnMcpServer() {
   const config = loadConfiguration();
 
-  const client = new Client({
+  const client = new ClientCtor({
     leagueId: config.leagueId,
     teamId: config.teamId,
     espnS2: config.espnS2,
