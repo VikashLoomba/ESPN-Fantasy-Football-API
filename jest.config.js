@@ -13,6 +13,6 @@ module.exports = {
   testEnvironment: 'node',
   testMatch: ['**/src/**/?(*.)+(spec|test).[jt]s?(x)'],
   transform: {
-    '^.+\\.js$': 'babel-jest'
+    '^.+\\.[jt]s$': 'babel-jest'
   }
 };
