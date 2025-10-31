@@ -10,7 +10,10 @@
     "web.js",
     "node.js",
     "web-dev.js",
-    "node-dev.js"
+    "node-dev.js",
+    "dist",
+    "mcp",
+    "src"
   ],
   "author": {
     "name": "Mike Kreiser",
@@ -25,6 +28,7 @@
   "scripts": {
     "build:mcp": "npx tsc mcp/index.ts",
     "postbuild:mcp": "node -e \"const fs=require('fs');fs.mkdirSync('dist',{recursive:true});fs.renameSync('mcp/index.js','dist/index.js');\"",
+    "prepare": "npm run build:mcp",
     "build": "npm run clean:dist && webpack",
     "build:docs": "npm run clean:docs && jsdoc -c .jsdoc.json",
     "clean": "npm run clean:dist && npm run clean:docs",
