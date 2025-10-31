@@ -60,6 +60,7 @@ describe('espn MCP server', () => {
     process.env.ESPN_S2 = 'S2';
     process.env.npm_package_version = 'test-version';
     process.env.SEASON_ID = '2030';
+    process.env.SCORING_PERIOD_ID = '7';
   });
 
   afterEach(() => {
@@ -140,6 +141,16 @@ describe('espn MCP server', () => {
     expect(clientMock.getLeagueInfo).toHaveBeenCalledWith({ seasonId: 2030 });
     expect(result.structuredContent).toMatchObject(leagueInfo);
     expect(firstContentText).toContain('Test League');
+
+    clientMock.getFreeAgents.mockResolvedValue([] as never);
+    await testClient.callTool({
+      name: 'getFreeAgents'
+    });
+
+    expect(clientMock.getFreeAgents).toHaveBeenCalledWith({
+      seasonId: 2030,
+      scoringPeriodId: 7
+    });
 
     await testClient.close();
     await server.close();

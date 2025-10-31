@@ -65,13 +65,19 @@ function loadConfiguration() {
     if (!Number.isInteger(seasonId)) {
         throw new Error('SEASON_ID must be an integer if provided.');
     }
+    var scoringPeriodRaw = process.env.SCORING_PERIOD_ID;
+    var scoringPeriodId = scoringPeriodRaw ? Number(scoringPeriodRaw) : 1;
+    if (!Number.isInteger(scoringPeriodId)) {
+        throw new Error('SCORING_PERIOD_ID must be an integer if provided.');
+    }
     return {
         teamId: teamId,
         leagueId: leagueId,
         espnS2: process.env.ESPN_S2,
         swid: process.env.ESPN_SWID,
         version: (_a = process.env.npm_package_version) !== null && _a !== void 0 ? _a : '0.0.0',
-        seasonId: seasonId
+        seasonId: seasonId,
+        scoringPeriodId: scoringPeriodId
     };
 }
 function toStructured(value) {
@@ -91,6 +97,9 @@ function buildToolResult(data) {
     else {
         text = JSON.stringify(structured, null, 2);
     }
+    var structuredContent = structured && typeof structured === 'object' && !Array.isArray(structured) ?
+        structured :
+        { value: structured };
     return {
         content: [
             {
@@ -98,7 +107,7 @@ function buildToolResult(data) {
                 text: text
             }
         ],
-        structuredContent: structured
+        structuredContent: structuredContent
     };
 }
 var ClientCtor;
@@ -130,112 +139,88 @@ function registerTools(server, client, config) {
             return [2 /*return*/, buildToolResult({ success: true })];
         });
     }); });
-    server.tool('getBoxscoreForWeek', {
-        matchupPeriodId: zod_1.z.number().int(),
-        scoringPeriodId: zod_1.z.number().int()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+    server.tool('getBoxscoreForWeek', function () { return __awaiter(_this, void 0, void 0, function () {
         var boxscores;
-        var matchupPeriodId = _b.matchupPeriodId, scoringPeriodId = _b.scoringPeriodId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0: return [4 /*yield*/, client.getBoxscoreForWeek({
                         seasonId: config.seasonId,
-                        matchupPeriodId: matchupPeriodId,
-                        scoringPeriodId: scoringPeriodId
+                        matchupPeriodId: config.scoringPeriodId,
+                        scoringPeriodId: config.scoringPeriodId
                     })];
                 case 1:
-                    boxscores = _c.sent();
+                    boxscores = _a.sent();
                     return [2 /*return*/, buildToolResult(boxscores)];
             }
         });
     }); });
-    server.tool('getDraftInfo', {
-        scoringPeriodId: zod_1.z.number().int().optional()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
-        var draftArgs, draftInfo;
-        var scoringPeriodId = _b.scoringPeriodId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
-                case 0:
-                    if (scoringPeriodId !== undefined) {
-                        draftArgs = { seasonId: config.seasonId, scoringPeriodId: scoringPeriodId };
-                    }
-                    else {
-                        draftArgs = { seasonId: config.seasonId };
-                    }
-                    return [4 /*yield*/, client.getDraftInfo(draftArgs)];
+    server.tool('getDraftInfo', function () { return __awaiter(_this, void 0, void 0, function () {
+        var draftInfo;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, client.getDraftInfo({
+                        seasonId: config.seasonId,
+                        scoringPeriodId: config.scoringPeriodId
+                    })];
                 case 1:
-                    draftInfo = _c.sent();
+                    draftInfo = _a.sent();
                     return [2 /*return*/, buildToolResult(draftInfo)];
             }
         });
     }); });
-    server.tool('getHistoricalScoreboardForWeek', {
-        matchupPeriodId: zod_1.z.number().int(),
-        scoringPeriodId: zod_1.z.number().int()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+    server.tool('getHistoricalScoreboardForWeek', function () { return __awaiter(_this, void 0, void 0, function () {
         var scoreboard;
-        var matchupPeriodId = _b.matchupPeriodId, scoringPeriodId = _b.scoringPeriodId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0: return [4 /*yield*/, client.getHistoricalScoreboardForWeek({
                         seasonId: config.seasonId,
-                        matchupPeriodId: matchupPeriodId,
-                        scoringPeriodId: scoringPeriodId
+                        matchupPeriodId: config.scoringPeriodId,
+                        scoringPeriodId: config.scoringPeriodId
                     })];
                 case 1:
-                    scoreboard = _c.sent();
+                    scoreboard = _a.sent();
                     return [2 /*return*/, buildToolResult(scoreboard)];
             }
         });
     }); });
-    server.tool('getFreeAgents', {
-        scoringPeriodId: zod_1.z.number().int()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+    server.tool('getFreeAgents', function () { return __awaiter(_this, void 0, void 0, function () {
         var freeAgents;
-        var scoringPeriodId = _b.scoringPeriodId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0: return [4 /*yield*/, client.getFreeAgents({
                         seasonId: config.seasonId,
-                        scoringPeriodId: scoringPeriodId
+                        scoringPeriodId: config.scoringPeriodId
                     })];
                 case 1:
-                    freeAgents = _c.sent();
+                    freeAgents = _a.sent();
                     return [2 /*return*/, buildToolResult(freeAgents)];
             }
         });
     }); });
-    server.tool('getTeamsAtWeek', {
-        scoringPeriodId: zod_1.z.number().int()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+    server.tool('getTeamsAtWeek', function () { return __awaiter(_this, void 0, void 0, function () {
         var teams;
-        var scoringPeriodId = _b.scoringPeriodId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0: return [4 /*yield*/, client.getTeamsAtWeek({
                         seasonId: config.seasonId,
-                        scoringPeriodId: scoringPeriodId
+                        scoringPeriodId: config.scoringPeriodId
                     })];
                 case 1:
-                    teams = _c.sent();
+                    teams = _a.sent();
                     return [2 /*return*/, buildToolResult(teams)];
             }
         });
     }); });
-    server.tool('getHistoricalTeamsAtWeek', {
-        scoringPeriodId: zod_1.z.number().int()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+    server.tool('getHistoricalTeamsAtWeek', function () { return __awaiter(_this, void 0, void 0, function () {
         var teams;
-        var scoringPeriodId = _b.scoringPeriodId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0: return [4 /*yield*/, client.getHistoricalTeamsAtWeek({
                         seasonId: config.seasonId,
-                        scoringPeriodId: scoringPeriodId
+                        scoringPeriodId: config.scoringPeriodId
                     })];
                 case 1:
-                    teams = _c.sent();
+                    teams = _a.sent();
                     return [2 /*return*/, buildToolResult(teams)];
             }
         });
