@@ -1,7 +1,7 @@
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client as McpClient } from '@modelcontextprotocol/sdk/client/index.js';
 import { createEspnMcpServer } from '../../mcp/index';
-import Client from '../../src/client/client.js';
+import Client from '../client/client.js';
 
 jest.mock('dotenv', () => ({ config: jest.fn() }));
 
@@ -79,9 +79,20 @@ describe('espn MCP server', () => {
       arguments: { seasonId: 2024 }
     });
 
+    const firstContent = Array.isArray(result.content) ? result.content[0] : undefined;
+    let firstContentText = '';
+    if (
+      firstContent &&
+      typeof firstContent === 'object' &&
+      'text' in firstContent &&
+      typeof firstContent.text === 'string'
+    ) {
+      firstContentText = firstContent.text;
+    }
+
     expect(getLeagueInfoSpy).toHaveBeenCalledWith({ seasonId: 2024 });
     expect(result.structuredContent).toMatchObject(leagueInfo);
-    expect(result.content?.[0]?.text ?? '').toContain('Test League');
+    expect(firstContentText).toContain('Test League');
 
     await testClient.close();
     await server.close();

@@ -53,10 +53,12 @@ function toStructured(value: unknown) {
 
 function buildToolResult(data: unknown) {
   const structured = toStructured(data);
-  const text =
-    typeof structured === 'string'
-      ? structured
-      : JSON.stringify(structured, null, 2);
+  let text: string;
+  if (typeof structured === 'string') {
+    text = structured;
+  } else {
+    text = JSON.stringify(structured, null, 2);
+  }
 
   return {
     content: [
@@ -106,11 +108,13 @@ function registerTools(server: McpServer, client: Client) {
       scoringPeriodId: z.number().int().optional()
     },
     async ({ seasonId, scoringPeriodId }) => {
-      const draftInfo = await client.getDraftInfo(
-        scoringPeriodId !== undefined
-          ? { seasonId, scoringPeriodId }
-          : { seasonId }
-      );
+      let draftArgs;
+      if (scoringPeriodId !== undefined) {
+        draftArgs = { seasonId, scoringPeriodId };
+      } else {
+        draftArgs = { seasonId };
+      }
+      const draftInfo = await client.getDraftInfo(draftArgs);
       return buildToolResult(draftInfo);
     }
   );

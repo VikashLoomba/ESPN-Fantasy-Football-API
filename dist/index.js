@@ -77,9 +77,13 @@ function toStructured(value) {
 }
 function buildToolResult(data) {
     var structured = toStructured(data);
-    var text = typeof structured === 'string'
-        ? structured
-        : JSON.stringify(structured, null, 2);
+    var text;
+    if (typeof structured === 'string') {
+        text = structured;
+    }
+    else {
+        text = JSON.stringify(structured, null, 2);
+    }
     return {
         content: [
             {
@@ -126,13 +130,18 @@ function registerTools(server, client) {
         seasonId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int().optional()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
-        var draftInfo;
+        var draftArgs, draftInfo;
         var seasonId = _b.seasonId, scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
-                case 0: return [4 /*yield*/, client.getDraftInfo(scoringPeriodId !== undefined
-                        ? { seasonId: seasonId, scoringPeriodId: scoringPeriodId }
-                        : { seasonId: seasonId })];
+                case 0:
+                    if (scoringPeriodId !== undefined) {
+                        draftArgs = { seasonId: seasonId, scoringPeriodId: scoringPeriodId };
+                    }
+                    else {
+                        draftArgs = { seasonId: seasonId };
+                    }
+                    return [4 /*yield*/, client.getDraftInfo(draftArgs)];
                 case 1:
                     draftInfo = _c.sent();
                     return [2 /*return*/, buildToolResult(draftInfo)];
