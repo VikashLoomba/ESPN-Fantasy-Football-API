@@ -59,6 +59,7 @@ describe('espn MCP server', () => {
     process.env.ESPN_SWID = '{SWID}';
     process.env.ESPN_S2 = 'S2';
     process.env.npm_package_version = 'test-version';
+    process.env.SEASON_ID = '2030';
   });
 
   afterEach(() => {
@@ -122,8 +123,7 @@ describe('espn MCP server', () => {
     clientMock.getLeagueInfo.mockResolvedValue(leagueInfo as never);
 
     const result = await testClient.callTool({
-      name: 'getLeagueInfo',
-      arguments: { seasonId: 2024 }
+      name: 'getLeagueInfo'
     });
 
     const firstContent = Array.isArray(result.content) ? result.content[0] : undefined;
@@ -137,7 +137,7 @@ describe('espn MCP server', () => {
       firstContentText = firstContent.text;
     }
 
-    expect(clientMock.getLeagueInfo).toHaveBeenCalledWith({ seasonId: 2024 });
+    expect(clientMock.getLeagueInfo).toHaveBeenCalledWith({ seasonId: 2030 });
     expect(result.structuredContent).toMatchObject(leagueInfo);
     expect(firstContentText).toContain('Test League');
 

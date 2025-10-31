@@ -60,12 +60,18 @@ function loadConfiguration() {
     if (!Number.isInteger(leagueId)) {
         throw new Error('LEAGUE_ID must be an integer.');
     }
+    var seasonIdRaw = process.env.SEASON_ID;
+    var seasonId = seasonIdRaw ? Number(seasonIdRaw) : 2025;
+    if (!Number.isInteger(seasonId)) {
+        throw new Error('SEASON_ID must be an integer if provided.');
+    }
     return {
         teamId: teamId,
         leagueId: leagueId,
         espnS2: process.env.ESPN_S2,
         swid: process.env.ESPN_SWID,
-        version: (_a = process.env.npm_package_version) !== null && _a !== void 0 ? _a : '0.0.0'
+        version: (_a = process.env.npm_package_version) !== null && _a !== void 0 ? _a : '0.0.0',
+        seasonId: seasonId
     };
 }
 function toStructured(value) {
@@ -112,7 +118,7 @@ if (!ClientCtor) {
     var fallback = (_b = (_a = sourceModule === null || sourceModule === void 0 ? void 0 : sourceModule.default) !== null && _a !== void 0 ? _a : sourceModule === null || sourceModule === void 0 ? void 0 : sourceModule.Client) !== null && _b !== void 0 ? _b : sourceModule;
     ClientCtor = fallback;
 }
-function registerTools(server, client) {
+function registerTools(server, client, config) {
     var _this = this;
     server.tool('setCookies', {
         espnS2: zod_1.z.string(),
@@ -125,16 +131,15 @@ function registerTools(server, client) {
         });
     }); });
     server.tool('getBoxscoreForWeek', {
-        seasonId: zod_1.z.number().int(),
         matchupPeriodId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var boxscores;
-        var seasonId = _b.seasonId, matchupPeriodId = _b.matchupPeriodId, scoringPeriodId = _b.scoringPeriodId;
+        var matchupPeriodId = _b.matchupPeriodId, scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0: return [4 /*yield*/, client.getBoxscoreForWeek({
-                        seasonId: seasonId,
+                        seasonId: config.seasonId,
                         matchupPeriodId: matchupPeriodId,
                         scoringPeriodId: scoringPeriodId
                     })];
@@ -145,19 +150,18 @@ function registerTools(server, client) {
         });
     }); });
     server.tool('getDraftInfo', {
-        seasonId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int().optional()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var draftArgs, draftInfo;
-        var seasonId = _b.seasonId, scoringPeriodId = _b.scoringPeriodId;
+        var scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0:
                     if (scoringPeriodId !== undefined) {
-                        draftArgs = { seasonId: seasonId, scoringPeriodId: scoringPeriodId };
+                        draftArgs = { seasonId: config.seasonId, scoringPeriodId: scoringPeriodId };
                     }
                     else {
-                        draftArgs = { seasonId: seasonId };
+                        draftArgs = { seasonId: config.seasonId };
                     }
                     return [4 /*yield*/, client.getDraftInfo(draftArgs)];
                 case 1:
@@ -167,16 +171,15 @@ function registerTools(server, client) {
         });
     }); });
     server.tool('getHistoricalScoreboardForWeek', {
-        seasonId: zod_1.z.number().int(),
         matchupPeriodId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var scoreboard;
-        var seasonId = _b.seasonId, matchupPeriodId = _b.matchupPeriodId, scoringPeriodId = _b.scoringPeriodId;
+        var matchupPeriodId = _b.matchupPeriodId, scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0: return [4 /*yield*/, client.getHistoricalScoreboardForWeek({
-                        seasonId: seasonId,
+                        seasonId: config.seasonId,
                         matchupPeriodId: matchupPeriodId,
                         scoringPeriodId: scoringPeriodId
                     })];
@@ -187,15 +190,14 @@ function registerTools(server, client) {
         });
     }); });
     server.tool('getFreeAgents', {
-        seasonId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var freeAgents;
-        var seasonId = _b.seasonId, scoringPeriodId = _b.scoringPeriodId;
+        var scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0: return [4 /*yield*/, client.getFreeAgents({
-                        seasonId: seasonId,
+                        seasonId: config.seasonId,
                         scoringPeriodId: scoringPeriodId
                     })];
                 case 1:
@@ -205,15 +207,14 @@ function registerTools(server, client) {
         });
     }); });
     server.tool('getTeamsAtWeek', {
-        seasonId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var teams;
-        var seasonId = _b.seasonId, scoringPeriodId = _b.scoringPeriodId;
+        var scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0: return [4 /*yield*/, client.getTeamsAtWeek({
-                        seasonId: seasonId,
+                        seasonId: config.seasonId,
                         scoringPeriodId: scoringPeriodId
                     })];
                 case 1:
@@ -223,15 +224,14 @@ function registerTools(server, client) {
         });
     }); });
     server.tool('getHistoricalTeamsAtWeek', {
-        seasonId: zod_1.z.number().int(),
         scoringPeriodId: zod_1.z.number().int()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var teams;
-        var seasonId = _b.seasonId, scoringPeriodId = _b.scoringPeriodId;
+        var scoringPeriodId = _b.scoringPeriodId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0: return [4 /*yield*/, client.getHistoricalTeamsAtWeek({
-                        seasonId: seasonId,
+                        seasonId: config.seasonId,
                         scoringPeriodId: scoringPeriodId
                     })];
                 case 1:
@@ -255,16 +255,13 @@ function registerTools(server, client) {
             }
         });
     }); });
-    server.tool('getLeagueInfo', {
-        seasonId: zod_1.z.number().int()
-    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+    server.tool('getLeagueInfo', function () { return __awaiter(_this, void 0, void 0, function () {
         var info;
-        var seasonId = _b.seasonId;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
-                case 0: return [4 /*yield*/, client.getLeagueInfo({ seasonId: seasonId })];
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0: return [4 /*yield*/, client.getLeagueInfo({ seasonId: config.seasonId })];
                 case 1:
-                    info = _c.sent();
+                    info = _a.sent();
                     return [2 /*return*/, buildToolResult(info)];
             }
         });
@@ -282,7 +279,7 @@ function createEspnMcpServer() {
         name: 'espn-fantasy-football-mcp',
         version: config.version
     });
-    registerTools(server, client);
+    registerTools(server, client, config);
     return { server: server, client: client };
 }
 function startEspnMcpServer() {

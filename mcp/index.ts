@@ -13,6 +13,7 @@ interface ServerConfig {
   espnS2: string;
   swid: string;
   version: string;
+  seasonId: number;
 }
 
 const REQUIRED_ENV_VARS: RequiredEnvVar[] = ['TEAM_ID', 'LEAGUE_ID', 'ESPN_SWID', 'ESPN_S2'];
@@ -35,12 +36,19 @@ function loadConfiguration(): ServerConfig {
     throw new Error('LEAGUE_ID must be an integer.');
   }
 
+  const seasonIdRaw = process.env.SEASON_ID;
+  const seasonId = seasonIdRaw ? Number(seasonIdRaw) : 2025;
+  if (!Number.isInteger(seasonId)) {
+    throw new Error('SEASON_ID must be an integer if provided.');
+  }
+
   return {
     teamId,
     leagueId,
     espnS2: process.env.ESPN_S2 as string,
     swid: process.env.ESPN_SWID as string,
-    version: process.env.npm_package_version ?? '0.0.0'
+    version: process.env.npm_package_version ?? '0.0.0',
+    seasonId
   };
 }
 
@@ -93,7 +101,7 @@ if (!ClientCtor) {
   ClientCtor = fallback as ClientConstructor;
 }
 
-function registerTools(server: McpServer, client: ClientInstance) {
+function registerTools(server: McpServer, client: ClientInstance, config: ServerConfig) {
   server.tool(
     'setCookies',
     {
@@ -109,13 +117,12 @@ function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'getBoxscoreForWeek',
     {
-      seasonId: z.number().int(),
       matchupPeriodId: z.number().int(),
       scoringPeriodId: z.number().int()
     },
-    async ({ seasonId, matchupPeriodId, scoringPeriodId }) => {
+    async ({ matchupPeriodId, scoringPeriodId }) => {
       const boxscores = await client.getBoxscoreForWeek({
-        seasonId,
+        seasonId: config.seasonId,
         matchupPeriodId,
         scoringPeriodId
       });
@@ -126,15 +133,14 @@ function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'getDraftInfo',
     {
-      seasonId: z.number().int(),
       scoringPeriodId: z.number().int().optional()
     },
-    async ({ seasonId, scoringPeriodId }) => {
+    async ({ scoringPeriodId }) => {
       let draftArgs;
       if (scoringPeriodId !== undefined) {
-        draftArgs = { seasonId, scoringPeriodId };
+        draftArgs = { seasonId: config.seasonId, scoringPeriodId };
       } else {
-        draftArgs = { seasonId };
+        draftArgs = { seasonId: config.seasonId };
       }
       const draftInfo = await client.getDraftInfo(draftArgs);
       return buildToolResult(draftInfo);
@@ -144,13 +150,12 @@ function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'getHistoricalScoreboardForWeek',
     {
-      seasonId: z.number().int(),
       matchupPeriodId: z.number().int(),
       scoringPeriodId: z.number().int()
     },
-    async ({ seasonId, matchupPeriodId, scoringPeriodId }) => {
+    async ({ matchupPeriodId, scoringPeriodId }) => {
       const scoreboard = await client.getHistoricalScoreboardForWeek({
-        seasonId,
+        seasonId: config.seasonId,
         matchupPeriodId,
         scoringPeriodId
       });
@@ -161,12 +166,11 @@ function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'getFreeAgents',
     {
-      seasonId: z.number().int(),
       scoringPeriodId: z.number().int()
     },
-    async ({ seasonId, scoringPeriodId }) => {
+    async ({ scoringPeriodId }) => {
       const freeAgents = await client.getFreeAgents({
-        seasonId,
+        seasonId: config.seasonId,
         scoringPeriodId
       });
       return buildToolResult(freeAgents);
@@ -176,12 +180,11 @@ function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'getTeamsAtWeek',
     {
-      seasonId: z.number().int(),
       scoringPeriodId: z.number().int()
     },
-    async ({ seasonId, scoringPeriodId }) => {
+    async ({ scoringPeriodId }) => {
       const teams = await client.getTeamsAtWeek({
-        seasonId,
+        seasonId: config.seasonId,
         scoringPeriodId
       });
       return buildToolResult(teams);
@@ -191,12 +194,11 @@ function registerTools(server: McpServer, client: ClientInstance) {
   server.tool(
     'getHistoricalTeamsAtWeek',
     {
-      seasonId: z.number().int(),
       scoringPeriodId: z.number().int()
     },
-    async ({ seasonId, scoringPeriodId }) => {
+    async ({ scoringPeriodId }) => {
       const teams = await client.getHistoricalTeamsAtWeek({
-        seasonId,
+        seasonId: config.seasonId,
         scoringPeriodId
       });
       return buildToolResult(teams);
@@ -217,11 +219,8 @@ function registerTools(server: McpServer, client: ClientInstance) {
 
   server.tool(
     'getLeagueInfo',
-    {
-      seasonId: z.number().int()
-    },
-    async ({ seasonId }) => {
-      const info = await client.getLeagueInfo({ seasonId });
+    async () => {
+      const info = await client.getLeagueInfo({ seasonId: config.seasonId });
       return buildToolResult(info);
     }
   );
@@ -242,7 +241,7 @@ export function createEspnMcpServer() {
     version: config.version
   });
 
-  registerTools(server, client);
+  registerTools(server, client, config);
 
   return { server, client };
 }
