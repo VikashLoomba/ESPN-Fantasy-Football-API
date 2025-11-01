@@ -3,6 +3,7 @@ export interface ClientInitializationOptions {
   teamId?: number;
   espnS2?: string;
   SWID?: string;
+  scoringPeriodId?: number;
 }
 
 export interface ClientAuthCookies {
@@ -39,17 +40,27 @@ declare class Client {
   constructor(options?: ClientInitializationOptions);
 
   leagueId?: number;
+
   espnS2?: string;
+
   SWID?: string;
 
   setCookies(cookies: ClientAuthCookies): void;
+
   getBoxscoreForWeek(options: WeekRequestOptions): Promise<unknown>;
+
   getDraftInfo(options: DraftInfoOptions): Promise<unknown>;
+
   getHistoricalScoreboardForWeek(options: WeekRequestOptions): Promise<unknown>;
+
   getFreeAgents(options: { seasonId: number; scoringPeriodId: number }): Promise<unknown>;
+
   getTeamsAtWeek(options: TeamsAtWeekOptions): Promise<unknown>;
+
   getHistoricalTeamsAtWeek(options: TeamsAtWeekOptions): Promise<unknown>;
+
   getNFLGamesForPeriod(options: GamesForPeriodOptions): Promise<unknown>;
+
   getLeagueInfo(options: LeagueInfoOptions): Promise<unknown>;
 }
 
