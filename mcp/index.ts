@@ -188,14 +188,17 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
     }
   }
 
-  async function buildRosterSummary(scoringPeriodId: number) {
-    const { team } = await fetchTeam(scoringPeriodId, config.teamId);
+  async function buildRosterSummary(scoringPeriodId: number, targetTeamId: number = config.teamId) {
+    const { team } = await fetchTeam(scoringPeriodId, targetTeamId);
     if (!team) {
-      throw new Error(`Unable to locate team ${config.teamId} for scoring period ${scoringPeriodId}.`);
+      throw new Error(`Unable to locate team ${targetTeamId} for scoring period ${scoringPeriodId}.`);
     }
 
-    const lineupMap = await fetchLineup(scoringPeriodId);
-    const roster = team.roster.map((player) => {
+    const lineupMap = targetTeamId === config.teamId ?
+      await fetchLineup(scoringPeriodId) :
+      new Map<number, { rosteredPosition: string | null; projectedPoints: number | null; totalPoints: number | null }>();
+
+    const roster = team.roster.map((player: any) => {
       const slotInfo = lineupMap.get(player.id);
       const outlook = player.outlooksByWeek?.[String(scoringPeriodId)];
 
@@ -353,11 +356,12 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
   server.tool(
     'getMyRoster',
     {
-      scoringPeriodId: z.number().int().optional()
+      scoringPeriodId: z.number().int().optional(),
+      teamId: z.number().int().optional()
     },
-    async ({ scoringPeriodId } = {}) => {
+    async ({ scoringPeriodId, teamId } = {}) => {
       const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
-      const rosterSummary = await buildRosterSummary(effectiveScoringPeriodId);
+      const rosterSummary = await buildRosterSummary(effectiveScoringPeriodId, teamId ?? config.teamId);
       return buildToolResult(rosterSummary);
     }
   );
@@ -366,11 +370,12 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
     'getPlayerStatus',
     {
       playerName: z.string(),
-      scoringPeriodId: z.number().int().optional()
+      scoringPeriodId: z.number().int().optional(),
+      teamId: z.number().int().optional()
     },
-    async ({ playerName, scoringPeriodId }) => {
+    async ({ playerName, scoringPeriodId, teamId }) => {
       const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
-      const rosterSummary = await buildRosterSummary(effectiveScoringPeriodId);
+      const rosterSummary = await buildRosterSummary(effectiveScoringPeriodId, teamId ?? config.teamId);
 
       const lowercaseQuery = playerName.toLowerCase();
       let player = rosterSummary.roster.find((entry) => entry.name.toLowerCase() === lowercaseQuery);
@@ -394,11 +399,57 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
   server.tool(
     'getTeamSchedule',
     {
-      nflTeamAbbreviation: z.string(),
+      nflTeamAbbreviation: z.string().optional(),
+      playerName: z.string().optional(),
+      teamId: z.number().int().optional(),
+      scoringPeriodId: z.number().int().optional(),
       startDate: z.string().regex(/^\d{8}$/, 'startDate must be in YYYYMMDD format').optional(),
       endDate: z.string().regex(/^\d{8}$/, 'endDate must be in YYYYMMDD format').optional()
     },
-    async ({ nflTeamAbbreviation, startDate, endDate }) => {
+    async ({ nflTeamAbbreviation, playerName, teamId, scoringPeriodId, startDate, endDate }) => {
+      const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
+      let derivedAbbreviation = nflTeamAbbreviation;
+
+      if (!derivedAbbreviation && (playerName || teamId)) {
+        const rosterSummary = await buildRosterSummary(
+          effectiveScoringPeriodId,
+          teamId ?? config.teamId
+        );
+
+        if (playerName) {
+          const lowercaseQuery = playerName.toLowerCase();
+          let player = rosterSummary.roster.find((entry) => entry.name.toLowerCase() === lowercaseQuery);
+          if (!player) {
+            player = rosterSummary.roster.find((entry) => entry.name.toLowerCase().includes(lowercaseQuery));
+          }
+
+          if (!player) {
+            throw new Error(`Player "${playerName}" was not found on team ${rosterSummary.team.name}.`);
+          }
+
+          derivedAbbreviation = player.proTeam ?? undefined;
+        }
+
+        if (!derivedAbbreviation) {
+          const counts = new Map<string, number>();
+          rosterSummary.roster.forEach((entry) => {
+            if (!entry.proTeam || entry.proTeam === 'Bye') {
+              return;
+            }
+            counts.set(entry.proTeam, (counts.get(entry.proTeam) ?? 0) + 1);
+          });
+
+          const sorted = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+          derivedAbbreviation = sorted[0]?.[0];
+        }
+      }
+
+      if (!derivedAbbreviation) {
+        throw new Error(
+          'Unable to determine NFL team. Provide nflTeamAbbreviation, playerName, or teamId.'
+        );
+      }
+
       const today = new Date();
       const defaultStart = formatDate(today);
       const defaultEnd = formatDate(new Date(today.getTime() + (7 * 24 * 60 * 60 * 1000)));
@@ -410,12 +461,13 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
 
       const filtered = games.filter(
         (game) =>
-          game.homeTeam?.teamAbbrev === nflTeamAbbreviation ||
-          game.awayTeam?.teamAbbrev === nflTeamAbbreviation
+          game.homeTeam?.teamAbbrev === derivedAbbreviation ||
+          game.awayTeam?.teamAbbrev === derivedAbbreviation
       );
 
       return buildToolResult({
-        nflTeamAbbreviation,
+        nflTeamAbbreviation: derivedAbbreviation,
+        derivedFrom: nflTeamAbbreviation ? 'provided' : playerName ? `player:${playerName}` : 'teamRoster',
         startDate: startDate ?? defaultStart,
         endDate: endDate ?? defaultEnd,
         games: filtered

@@ -228,20 +228,28 @@ function registerTools(server, client, config) {
             });
         });
     }
-    function buildRosterSummary(scoringPeriodId) {
-        return __awaiter(this, void 0, void 0, function () {
-            var team, lineupMap, roster;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0: return [4 /*yield*/, fetchTeam(scoringPeriodId, config.teamId)];
+    function buildRosterSummary(scoringPeriodId_1) {
+        return __awaiter(this, arguments, void 0, function (scoringPeriodId, targetTeamId) {
+            var team, lineupMap, _a, roster;
+            if (targetTeamId === void 0) { targetTeamId = config.teamId; }
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0: return [4 /*yield*/, fetchTeam(scoringPeriodId, targetTeamId)];
                     case 1:
-                        team = (_a.sent()).team;
+                        team = (_b.sent()).team;
                         if (!team) {
-                            throw new Error("Unable to locate team ".concat(config.teamId, " for scoring period ").concat(scoringPeriodId, "."));
+                            throw new Error("Unable to locate team ".concat(targetTeamId, " for scoring period ").concat(scoringPeriodId, "."));
                         }
+                        if (!(targetTeamId === config.teamId)) return [3 /*break*/, 3];
                         return [4 /*yield*/, fetchLineup(scoringPeriodId)];
                     case 2:
-                        lineupMap = _a.sent();
+                        _a = _b.sent();
+                        return [3 /*break*/, 4];
+                    case 3:
+                        _a = new Map();
+                        _b.label = 4;
+                    case 4:
+                        lineupMap = _a;
                         roster = team.roster.map(function (player) {
                             var _a, _b, _c, _d, _e;
                             var slotInfo = lineupMap.get(player.id);
@@ -424,7 +432,8 @@ function registerTools(server, client, config) {
         });
     }); });
     server.tool('getMyRoster', {
-        scoringPeriodId: zod_1.z.number().int().optional()
+        scoringPeriodId: zod_1.z.number().int().optional(),
+        teamId: zod_1.z.number().int().optional()
     }, function () {
         var args_1 = [];
         for (var _i = 0; _i < arguments.length; _i++) {
@@ -432,12 +441,12 @@ function registerTools(server, client, config) {
         }
         return __awaiter(_this, __spreadArray([], args_1, true), void 0, function (_a) {
             var effectiveScoringPeriodId, rosterSummary;
-            var _b = _a === void 0 ? {} : _a, scoringPeriodId = _b.scoringPeriodId;
+            var _b = _a === void 0 ? {} : _a, scoringPeriodId = _b.scoringPeriodId, teamId = _b.teamId;
             return __generator(this, function (_c) {
                 switch (_c.label) {
                     case 0:
                         effectiveScoringPeriodId = scoringPeriodId !== null && scoringPeriodId !== void 0 ? scoringPeriodId : config.scoringPeriodId;
-                        return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId)];
+                        return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId, teamId !== null && teamId !== void 0 ? teamId : config.teamId)];
                     case 1:
                         rosterSummary = _c.sent();
                         return [2 /*return*/, buildToolResult(rosterSummary)];
@@ -447,15 +456,16 @@ function registerTools(server, client, config) {
     });
     server.tool('getPlayerStatus', {
         playerName: zod_1.z.string(),
-        scoringPeriodId: zod_1.z.number().int().optional()
+        scoringPeriodId: zod_1.z.number().int().optional(),
+        teamId: zod_1.z.number().int().optional()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
         var effectiveScoringPeriodId, rosterSummary, lowercaseQuery, player;
-        var playerName = _b.playerName, scoringPeriodId = _b.scoringPeriodId;
+        var playerName = _b.playerName, scoringPeriodId = _b.scoringPeriodId, teamId = _b.teamId;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0:
                     effectiveScoringPeriodId = scoringPeriodId !== null && scoringPeriodId !== void 0 ? scoringPeriodId : config.scoringPeriodId;
-                    return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId)];
+                    return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId, teamId !== null && teamId !== void 0 ? teamId : config.teamId)];
                 case 1:
                     rosterSummary = _c.sent();
                     lowercaseQuery = playerName.toLowerCase();
@@ -475,15 +485,53 @@ function registerTools(server, client, config) {
         });
     }); });
     server.tool('getTeamSchedule', {
-        nflTeamAbbreviation: zod_1.z.string(),
+        nflTeamAbbreviation: zod_1.z.string().optional(),
+        playerName: zod_1.z.string().optional(),
+        teamId: zod_1.z.number().int().optional(),
+        scoringPeriodId: zod_1.z.number().int().optional(),
         startDate: zod_1.z.string().regex(/^\d{8}$/, 'startDate must be in YYYYMMDD format').optional(),
         endDate: zod_1.z.string().regex(/^\d{8}$/, 'endDate must be in YYYYMMDD format').optional()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
-        var today, defaultStart, defaultEnd, games, filtered;
-        var nflTeamAbbreviation = _b.nflTeamAbbreviation, startDate = _b.startDate, endDate = _b.endDate;
-        return __generator(this, function (_c) {
-            switch (_c.label) {
+        var effectiveScoringPeriodId, derivedAbbreviation, rosterSummary, lowercaseQuery_1, player, counts_1, sorted, today, defaultStart, defaultEnd, games, filtered;
+        var _c, _d;
+        var nflTeamAbbreviation = _b.nflTeamAbbreviation, playerName = _b.playerName, teamId = _b.teamId, scoringPeriodId = _b.scoringPeriodId, startDate = _b.startDate, endDate = _b.endDate;
+        return __generator(this, function (_e) {
+            switch (_e.label) {
                 case 0:
+                    effectiveScoringPeriodId = scoringPeriodId !== null && scoringPeriodId !== void 0 ? scoringPeriodId : config.scoringPeriodId;
+                    derivedAbbreviation = nflTeamAbbreviation;
+                    if (!(!derivedAbbreviation && (playerName || teamId))) return [3 /*break*/, 2];
+                    return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId, teamId !== null && teamId !== void 0 ? teamId : config.teamId)];
+                case 1:
+                    rosterSummary = _e.sent();
+                    if (playerName) {
+                        lowercaseQuery_1 = playerName.toLowerCase();
+                        player = rosterSummary.roster.find(function (entry) { return entry.name.toLowerCase() === lowercaseQuery_1; });
+                        if (!player) {
+                            player = rosterSummary.roster.find(function (entry) { return entry.name.toLowerCase().includes(lowercaseQuery_1); });
+                        }
+                        if (!player) {
+                            throw new Error("Player \"".concat(playerName, "\" was not found on team ").concat(rosterSummary.team.name, "."));
+                        }
+                        derivedAbbreviation = (_c = player.proTeam) !== null && _c !== void 0 ? _c : undefined;
+                    }
+                    if (!derivedAbbreviation) {
+                        counts_1 = new Map();
+                        rosterSummary.roster.forEach(function (entry) {
+                            var _a;
+                            if (!entry.proTeam || entry.proTeam === 'Bye') {
+                                return;
+                            }
+                            counts_1.set(entry.proTeam, ((_a = counts_1.get(entry.proTeam)) !== null && _a !== void 0 ? _a : 0) + 1);
+                        });
+                        sorted = Array.from(counts_1.entries()).sort(function (a, b) { return b[1] - a[1]; });
+                        derivedAbbreviation = (_d = sorted[0]) === null || _d === void 0 ? void 0 : _d[0];
+                    }
+                    _e.label = 2;
+                case 2:
+                    if (!derivedAbbreviation) {
+                        throw new Error('Unable to determine NFL team. Provide nflTeamAbbreviation, playerName, or teamId.');
+                    }
                     today = new Date();
                     defaultStart = formatDate(today);
                     defaultEnd = formatDate(new Date(today.getTime() + (7 * 24 * 60 * 60 * 1000)));
@@ -491,15 +539,16 @@ function registerTools(server, client, config) {
                             startDate: startDate !== null && startDate !== void 0 ? startDate : defaultStart,
                             endDate: endDate !== null && endDate !== void 0 ? endDate : defaultEnd
                         })];
-                case 1:
-                    games = _c.sent();
+                case 3:
+                    games = _e.sent();
                     filtered = games.filter(function (game) {
                         var _a, _b;
-                        return ((_a = game.homeTeam) === null || _a === void 0 ? void 0 : _a.teamAbbrev) === nflTeamAbbreviation ||
-                            ((_b = game.awayTeam) === null || _b === void 0 ? void 0 : _b.teamAbbrev) === nflTeamAbbreviation;
+                        return ((_a = game.homeTeam) === null || _a === void 0 ? void 0 : _a.teamAbbrev) === derivedAbbreviation ||
+                            ((_b = game.awayTeam) === null || _b === void 0 ? void 0 : _b.teamAbbrev) === derivedAbbreviation;
                     });
                     return [2 /*return*/, buildToolResult({
-                            nflTeamAbbreviation: nflTeamAbbreviation,
+                            nflTeamAbbreviation: derivedAbbreviation,
+                            derivedFrom: nflTeamAbbreviation ? 'provided' : playerName ? "player:".concat(playerName) : 'teamRoster',
                             startDate: startDate !== null && startDate !== void 0 ? startDate : defaultStart,
                             endDate: endDate !== null && endDate !== void 0 ? endDate : defaultEnd,
                             games: filtered
