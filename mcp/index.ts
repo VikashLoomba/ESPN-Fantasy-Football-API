@@ -114,6 +114,118 @@ if (!ClientCtor) {
 }
 
 function registerTools(server: McpServer, client: ClientInstance, config: ServerConfig) {
+  const calculatePointTotal = (stats: Record<string, unknown> | undefined) => {
+    if (!stats || typeof stats !== 'object') {
+      return null;
+    }
+
+    let total = 0;
+    let hasValue = false;
+
+    Object.entries(stats).forEach(([key, value]) => {
+      if (key === 'usesPoints') {
+        return;
+      }
+
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        total += value;
+        hasValue = true;
+      }
+    });
+
+    return hasValue ? Number(total.toFixed(2)) : null;
+  };
+
+  const formatDate = (date: Date) => date.toISOString().slice(0, 10).replace(/-/g, '');
+
+  async function fetchTeams(scoringPeriodId: number) {
+    const teams = await client.getTeamsAtWeek({
+      seasonId: config.seasonId,
+      scoringPeriodId
+    });
+
+    return teams as any[];
+  }
+
+  async function fetchTeam(scoringPeriodId: number, teamId: number) {
+    const teams = await fetchTeams(scoringPeriodId);
+    return {
+      teams,
+      team: teams.find((entry) => entry.id === teamId)
+    };
+  }
+
+  async function fetchLineup(scoringPeriodId: number) {
+    try {
+      const matchupPeriodId = scoringPeriodId;
+      const boxscores = await client.getBoxscoreForWeek({
+        seasonId: config.seasonId,
+        scoringPeriodId,
+        matchupPeriodId
+      }) as any[];
+
+      const matchup = boxscores.find(
+        (entry) => entry.homeTeamId === config.teamId || entry.awayTeamId === config.teamId
+      );
+
+      if (!matchup) {
+        return new Map<number, any>();
+      }
+
+      const roster = matchup.homeTeamId === config.teamId ? matchup.homeRoster : matchup.awayRoster;
+      return new Map(
+        roster.map((player) => ([
+          player.id,
+          {
+            rosteredPosition: player.rosteredPosition ?? null,
+            projectedPoints: calculatePointTotal(player.projectedPointBreakdown as Record<string, unknown> | undefined),
+            totalPoints: typeof player.totalPoints === 'number' ? Number(player.totalPoints.toFixed(2)) : null
+          }
+        ]))
+      );
+    } catch {
+      return new Map<number, any>();
+    }
+  }
+
+  async function buildRosterSummary(scoringPeriodId: number) {
+    const { team } = await fetchTeam(scoringPeriodId, config.teamId);
+    if (!team) {
+      throw new Error(`Unable to locate team ${config.teamId} for scoring period ${scoringPeriodId}.`);
+    }
+
+    const lineupMap = await fetchLineup(scoringPeriodId);
+    const roster = team.roster.map((player) => {
+      const slotInfo = lineupMap.get(player.id);
+      const outlook = player.outlooksByWeek?.[String(scoringPeriodId)];
+
+      return {
+        id: player.id,
+        name: player.fullName,
+        defaultPosition: player.defaultPosition,
+        rosteredPosition: slotInfo?.rosteredPosition ?? null,
+        proTeam: player.proTeamAbbreviation ?? player.proTeam,
+        availabilityStatus: player.availabilityStatus,
+        injuryStatus: player.injuryStatus,
+        isInjured: player.isInjured,
+        outlook,
+        projectedPoints: slotInfo?.projectedPoints ?? null,
+        totalPoints: slotInfo?.totalPoints ?? null
+      };
+    });
+
+    return {
+      team: {
+        id: team.id,
+        name: team.name,
+        abbreviation: team.abbreviation,
+        ownerName: team.ownerName
+      },
+      scoringPeriodId,
+      roster
+    };
+  }
+
   server.tool(
     'setCookies',
     {
@@ -174,12 +286,36 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
 
   server.tool(
     'getTeamsAtWeek',
-    async () => {
-      const teams = await client.getTeamsAtWeek({
-        seasonId: config.seasonId,
-        scoringPeriodId: config.scoringPeriodId
-      });
-      return buildToolResult(teams);
+    {
+      teamId: z.number().int().optional(),
+      scoringPeriodId: z.number().int().optional(),
+      includeAll: z.boolean().optional()
+    },
+    async ({ teamId, scoringPeriodId, includeAll } = {}) => {
+      const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
+      const teams = await fetchTeams(effectiveScoringPeriodId);
+
+      if (includeAll) {
+        return buildToolResult({
+          scoringPeriodId: effectiveScoringPeriodId,
+          teams
+        });
+      }
+
+      const targetTeamId = teamId ?? config.teamId;
+      if (!targetTeamId) {
+        return buildToolResult({
+          scoringPeriodId: effectiveScoringPeriodId,
+          teams
+        });
+      }
+
+      const team = teams.find((entry) => entry.id === targetTeamId);
+      if (!team) {
+        throw new Error(`Team with id ${targetTeamId} not found for scoring period ${effectiveScoringPeriodId}.`);
+      }
+
+      return buildToolResult(team);
     }
   );
 
@@ -211,6 +347,79 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
     async () => {
       const info = await client.getLeagueInfo({ seasonId: config.seasonId });
       return buildToolResult(info);
+    }
+  );
+
+  server.tool(
+    'getMyRoster',
+    {
+      scoringPeriodId: z.number().int().optional()
+    },
+    async ({ scoringPeriodId } = {}) => {
+      const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
+      const rosterSummary = await buildRosterSummary(effectiveScoringPeriodId);
+      return buildToolResult(rosterSummary);
+    }
+  );
+
+  server.tool(
+    'getPlayerStatus',
+    {
+      playerName: z.string(),
+      scoringPeriodId: z.number().int().optional()
+    },
+    async ({ playerName, scoringPeriodId }) => {
+      const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
+      const rosterSummary = await buildRosterSummary(effectiveScoringPeriodId);
+
+      const lowercaseQuery = playerName.toLowerCase();
+      let player = rosterSummary.roster.find((entry) => entry.name.toLowerCase() === lowercaseQuery);
+
+      if (!player) {
+        player = rosterSummary.roster.find((entry) => entry.name.toLowerCase().includes(lowercaseQuery));
+      }
+
+      if (!player) {
+        throw new Error(`Player "${playerName}" was not found on team ${rosterSummary.team.name}.`);
+      }
+
+      return buildToolResult({
+        team: rosterSummary.team,
+        scoringPeriodId: effectiveScoringPeriodId,
+        player
+      });
+    }
+  );
+
+  server.tool(
+    'getTeamSchedule',
+    {
+      nflTeamAbbreviation: z.string(),
+      startDate: z.string().regex(/^\d{8}$/, 'startDate must be in YYYYMMDD format').optional(),
+      endDate: z.string().regex(/^\d{8}$/, 'endDate must be in YYYYMMDD format').optional()
+    },
+    async ({ nflTeamAbbreviation, startDate, endDate }) => {
+      const today = new Date();
+      const defaultStart = formatDate(today);
+      const defaultEnd = formatDate(new Date(today.getTime() + (7 * 24 * 60 * 60 * 1000)));
+
+      const games = await client.getNFLGamesForPeriod({
+        startDate: startDate ?? defaultStart,
+        endDate: endDate ?? defaultEnd
+      }) as any[];
+
+      const filtered = games.filter(
+        (game) =>
+          game.homeTeam?.teamAbbrev === nflTeamAbbreviation ||
+          game.awayTeam?.teamAbbrev === nflTeamAbbreviation
+      );
+
+      return buildToolResult({
+        nflTeamAbbreviation,
+        startDate: startDate ?? defaultStart,
+        endDate: endDate ?? defaultEnd,
+        games: filtered
+      });
     }
   );
 }

@@ -36,6 +36,15 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+    if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+        if (ar || !(i in from)) {
+            if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+            ar[i] = from[i];
+        }
+    }
+    return to.concat(ar || Array.prototype.slice.call(from));
+};
 var _a, _b;
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createEspnMcpServer = createEspnMcpServer;
@@ -129,6 +138,142 @@ if (!ClientCtor) {
 }
 function registerTools(server, client, config) {
     var _this = this;
+    var calculatePointTotal = function (stats) {
+        if (!stats || typeof stats !== 'object') {
+            return null;
+        }
+        var total = 0;
+        var hasValue = false;
+        Object.entries(stats).forEach(function (_a) {
+            var key = _a[0], value = _a[1];
+            if (key === 'usesPoints') {
+                return;
+            }
+            if (typeof value === 'number' && Number.isFinite(value)) {
+                total += value;
+                hasValue = true;
+            }
+        });
+        return hasValue ? Number(total.toFixed(2)) : null;
+    };
+    var formatDate = function (date) { return date.toISOString().slice(0, 10).replace(/-/g, ''); };
+    function fetchTeams(scoringPeriodId) {
+        return __awaiter(this, void 0, void 0, function () {
+            var teams;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, client.getTeamsAtWeek({
+                            seasonId: config.seasonId,
+                            scoringPeriodId: scoringPeriodId
+                        })];
+                    case 1:
+                        teams = _a.sent();
+                        return [2 /*return*/, teams];
+                }
+            });
+        });
+    }
+    function fetchTeam(scoringPeriodId, teamId) {
+        return __awaiter(this, void 0, void 0, function () {
+            var teams;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, fetchTeams(scoringPeriodId)];
+                    case 1:
+                        teams = _a.sent();
+                        return [2 /*return*/, {
+                                teams: teams,
+                                team: teams.find(function (entry) { return entry.id === teamId; })
+                            }];
+                }
+            });
+        });
+    }
+    function fetchLineup(scoringPeriodId) {
+        return __awaiter(this, void 0, void 0, function () {
+            var matchupPeriodId, boxscores, matchup, roster, _a;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        _b.trys.push([0, 2, , 3]);
+                        matchupPeriodId = scoringPeriodId;
+                        return [4 /*yield*/, client.getBoxscoreForWeek({
+                                seasonId: config.seasonId,
+                                scoringPeriodId: scoringPeriodId,
+                                matchupPeriodId: matchupPeriodId
+                            })];
+                    case 1:
+                        boxscores = _b.sent();
+                        matchup = boxscores.find(function (entry) { return entry.homeTeamId === config.teamId || entry.awayTeamId === config.teamId; });
+                        if (!matchup) {
+                            return [2 /*return*/, new Map()];
+                        }
+                        roster = matchup.homeTeamId === config.teamId ? matchup.homeRoster : matchup.awayRoster;
+                        return [2 /*return*/, new Map(roster.map(function (player) {
+                                var _a;
+                                return ([
+                                    player.id,
+                                    {
+                                        rosteredPosition: (_a = player.rosteredPosition) !== null && _a !== void 0 ? _a : null,
+                                        projectedPoints: calculatePointTotal(player.projectedPointBreakdown),
+                                        totalPoints: typeof player.totalPoints === 'number' ? Number(player.totalPoints.toFixed(2)) : null
+                                    }
+                                ]);
+                            }))];
+                    case 2:
+                        _a = _b.sent();
+                        return [2 /*return*/, new Map()];
+                    case 3: return [2 /*return*/];
+                }
+            });
+        });
+    }
+    function buildRosterSummary(scoringPeriodId) {
+        return __awaiter(this, void 0, void 0, function () {
+            var team, lineupMap, roster;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0: return [4 /*yield*/, fetchTeam(scoringPeriodId, config.teamId)];
+                    case 1:
+                        team = (_a.sent()).team;
+                        if (!team) {
+                            throw new Error("Unable to locate team ".concat(config.teamId, " for scoring period ").concat(scoringPeriodId, "."));
+                        }
+                        return [4 /*yield*/, fetchLineup(scoringPeriodId)];
+                    case 2:
+                        lineupMap = _a.sent();
+                        roster = team.roster.map(function (player) {
+                            var _a, _b, _c, _d, _e;
+                            var slotInfo = lineupMap.get(player.id);
+                            var outlook = (_a = player.outlooksByWeek) === null || _a === void 0 ? void 0 : _a[String(scoringPeriodId)];
+                            return {
+                                id: player.id,
+                                name: player.fullName,
+                                defaultPosition: player.defaultPosition,
+                                rosteredPosition: (_b = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.rosteredPosition) !== null && _b !== void 0 ? _b : null,
+                                proTeam: (_c = player.proTeamAbbreviation) !== null && _c !== void 0 ? _c : player.proTeam,
+                                availabilityStatus: player.availabilityStatus,
+                                injuryStatus: player.injuryStatus,
+                                isInjured: player.isInjured,
+                                outlook: outlook,
+                                projectedPoints: (_d = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.projectedPoints) !== null && _d !== void 0 ? _d : null,
+                                totalPoints: (_e = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.totalPoints) !== null && _e !== void 0 ? _e : null
+                            };
+                        });
+                        return [2 /*return*/, {
+                                team: {
+                                    id: team.id,
+                                    name: team.name,
+                                    abbreviation: team.abbreviation,
+                                    ownerName: team.ownerName
+                                },
+                                scoringPeriodId: scoringPeriodId,
+                                roster: roster
+                            }];
+                }
+            });
+        });
+    }
     server.tool('setCookies', {
         espnS2: zod_1.z.string(),
         SWID: zod_1.z.string()
@@ -197,20 +342,47 @@ function registerTools(server, client, config) {
             }
         });
     }); });
-    server.tool('getTeamsAtWeek', function () { return __awaiter(_this, void 0, void 0, function () {
-        var teams;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0: return [4 /*yield*/, client.getTeamsAtWeek({
-                        seasonId: config.seasonId,
-                        scoringPeriodId: config.scoringPeriodId
-                    })];
-                case 1:
-                    teams = _a.sent();
-                    return [2 /*return*/, buildToolResult(teams)];
-            }
+    server.tool('getTeamsAtWeek', {
+        teamId: zod_1.z.number().int().optional(),
+        scoringPeriodId: zod_1.z.number().int().optional(),
+        includeAll: zod_1.z.boolean().optional()
+    }, function () {
+        var args_1 = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            args_1[_i] = arguments[_i];
+        }
+        return __awaiter(_this, __spreadArray([], args_1, true), void 0, function (_a) {
+            var effectiveScoringPeriodId, teams, targetTeamId, team;
+            var _b = _a === void 0 ? {} : _a, teamId = _b.teamId, scoringPeriodId = _b.scoringPeriodId, includeAll = _b.includeAll;
+            return __generator(this, function (_c) {
+                switch (_c.label) {
+                    case 0:
+                        effectiveScoringPeriodId = scoringPeriodId !== null && scoringPeriodId !== void 0 ? scoringPeriodId : config.scoringPeriodId;
+                        return [4 /*yield*/, fetchTeams(effectiveScoringPeriodId)];
+                    case 1:
+                        teams = _c.sent();
+                        if (includeAll) {
+                            return [2 /*return*/, buildToolResult({
+                                    scoringPeriodId: effectiveScoringPeriodId,
+                                    teams: teams
+                                })];
+                        }
+                        targetTeamId = teamId !== null && teamId !== void 0 ? teamId : config.teamId;
+                        if (!targetTeamId) {
+                            return [2 /*return*/, buildToolResult({
+                                    scoringPeriodId: effectiveScoringPeriodId,
+                                    teams: teams
+                                })];
+                        }
+                        team = teams.find(function (entry) { return entry.id === targetTeamId; });
+                        if (!team) {
+                            throw new Error("Team with id ".concat(targetTeamId, " not found for scoring period ").concat(effectiveScoringPeriodId, "."));
+                        }
+                        return [2 /*return*/, buildToolResult(team)];
+                }
+            });
         });
-    }); });
+    });
     server.tool('getHistoricalTeamsAtWeek', function () { return __awaiter(_this, void 0, void 0, function () {
         var teams;
         return __generator(this, function (_a) {
@@ -248,6 +420,90 @@ function registerTools(server, client, config) {
                 case 1:
                     info = _a.sent();
                     return [2 /*return*/, buildToolResult(info)];
+            }
+        });
+    }); });
+    server.tool('getMyRoster', {
+        scoringPeriodId: zod_1.z.number().int().optional()
+    }, function () {
+        var args_1 = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            args_1[_i] = arguments[_i];
+        }
+        return __awaiter(_this, __spreadArray([], args_1, true), void 0, function (_a) {
+            var effectiveScoringPeriodId, rosterSummary;
+            var _b = _a === void 0 ? {} : _a, scoringPeriodId = _b.scoringPeriodId;
+            return __generator(this, function (_c) {
+                switch (_c.label) {
+                    case 0:
+                        effectiveScoringPeriodId = scoringPeriodId !== null && scoringPeriodId !== void 0 ? scoringPeriodId : config.scoringPeriodId;
+                        return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId)];
+                    case 1:
+                        rosterSummary = _c.sent();
+                        return [2 /*return*/, buildToolResult(rosterSummary)];
+                }
+            });
+        });
+    });
+    server.tool('getPlayerStatus', {
+        playerName: zod_1.z.string(),
+        scoringPeriodId: zod_1.z.number().int().optional()
+    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+        var effectiveScoringPeriodId, rosterSummary, lowercaseQuery, player;
+        var playerName = _b.playerName, scoringPeriodId = _b.scoringPeriodId;
+        return __generator(this, function (_c) {
+            switch (_c.label) {
+                case 0:
+                    effectiveScoringPeriodId = scoringPeriodId !== null && scoringPeriodId !== void 0 ? scoringPeriodId : config.scoringPeriodId;
+                    return [4 /*yield*/, buildRosterSummary(effectiveScoringPeriodId)];
+                case 1:
+                    rosterSummary = _c.sent();
+                    lowercaseQuery = playerName.toLowerCase();
+                    player = rosterSummary.roster.find(function (entry) { return entry.name.toLowerCase() === lowercaseQuery; });
+                    if (!player) {
+                        player = rosterSummary.roster.find(function (entry) { return entry.name.toLowerCase().includes(lowercaseQuery); });
+                    }
+                    if (!player) {
+                        throw new Error("Player \"".concat(playerName, "\" was not found on team ").concat(rosterSummary.team.name, "."));
+                    }
+                    return [2 /*return*/, buildToolResult({
+                            team: rosterSummary.team,
+                            scoringPeriodId: effectiveScoringPeriodId,
+                            player: player
+                        })];
+            }
+        });
+    }); });
+    server.tool('getTeamSchedule', {
+        nflTeamAbbreviation: zod_1.z.string(),
+        startDate: zod_1.z.string().regex(/^\d{8}$/, 'startDate must be in YYYYMMDD format').optional(),
+        endDate: zod_1.z.string().regex(/^\d{8}$/, 'endDate must be in YYYYMMDD format').optional()
+    }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
+        var today, defaultStart, defaultEnd, games, filtered;
+        var nflTeamAbbreviation = _b.nflTeamAbbreviation, startDate = _b.startDate, endDate = _b.endDate;
+        return __generator(this, function (_c) {
+            switch (_c.label) {
+                case 0:
+                    today = new Date();
+                    defaultStart = formatDate(today);
+                    defaultEnd = formatDate(new Date(today.getTime() + (7 * 24 * 60 * 60 * 1000)));
+                    return [4 /*yield*/, client.getNFLGamesForPeriod({
+                            startDate: startDate !== null && startDate !== void 0 ? startDate : defaultStart,
+                            endDate: endDate !== null && endDate !== void 0 ? endDate : defaultEnd
+                        })];
+                case 1:
+                    games = _c.sent();
+                    filtered = games.filter(function (game) {
+                        var _a, _b;
+                        return ((_a = game.homeTeam) === null || _a === void 0 ? void 0 : _a.teamAbbrev) === nflTeamAbbreviation ||
+                            ((_b = game.awayTeam) === null || _b === void 0 ? void 0 : _b.teamAbbrev) === nflTeamAbbreviation;
+                    });
+                    return [2 /*return*/, buildToolResult({
+                            nflTeamAbbreviation: nflTeamAbbreviation,
+                            startDate: startDate !== null && startDate !== void 0 ? startDate : defaultStart,
+                            endDate: endDate !== null && endDate !== void 0 ? endDate : defaultEnd,
+                            games: filtered
+                        })];
             }
         });
     }); });
