@@ -100,6 +100,7 @@ class Player extends BaseCacheableObject {
       key: 'proTeamId',
       manualParse: (responseData) => _.get(nflTeamIdToNFLTeamAbbreviation, responseData)
     },
+    proTeamId: 'proTeamId',
     defaultPosition: {
       key: 'defaultPositionId',
       manualParse: (responseData) => _.get(slotCategoryIdToPositionMap, responseData)

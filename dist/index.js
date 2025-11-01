@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 "use strict";
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -176,25 +187,45 @@ function registerTools(server, client, config) {
             });
         });
     }
-    function fetchTeam(teamId) {
+    var cachedProTeamByeWeeks = null;
+    function fetchProTeamByeWeekMap() {
         return __awaiter(this, void 0, void 0, function () {
-            var teams;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0: return [4 /*yield*/, fetchTeams()];
+            var proTeams, byeWeekMap_1, _a;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        if (cachedProTeamByeWeeks) {
+                            return [2 /*return*/, cachedProTeamByeWeeks];
+                        }
+                        _b.label = 1;
                     case 1:
-                        teams = _a.sent();
-                        return [2 /*return*/, {
-                                teams: teams,
-                                team: teams.find(function (entry) { return entry.id === teamId; })
-                            }];
+                        _b.trys.push([1, 3, , 4]);
+                        return [4 /*yield*/, client.getProTeamSchedules({
+                                seasonId: config.seasonId
+                            })];
+                    case 2:
+                        proTeams = _b.sent();
+                        byeWeekMap_1 = new Map();
+                        (proTeams !== null && proTeams !== void 0 ? proTeams : []).forEach(function (team) {
+                            if (team && typeof team.id === 'number' && typeof team.byeWeek === 'number') {
+                                byeWeekMap_1.set(team.id, team.byeWeek);
+                            }
+                        });
+                        cachedProTeamByeWeeks = byeWeekMap_1;
+                        return [2 /*return*/, byeWeekMap_1];
+                    case 3:
+                        _a = _b.sent();
+                        cachedProTeamByeWeeks = new Map();
+                        return [2 /*return*/, cachedProTeamByeWeeks];
+                    case 4: return [2 /*return*/];
                 }
             });
         });
     }
-    function fetchLineup() {
-        return __awaiter(this, void 0, void 0, function () {
-            var matchupPeriodId, boxscores, matchup, roster, _a;
+    function fetchMatchupContext() {
+        return __awaiter(this, arguments, void 0, function (targetTeamId) {
+            var matchupPeriodId, boxscores, matchup, buildLineupMap, homeLineup, awayLineup, opponentTeamId, _a;
+            if (targetTeamId === void 0) { targetTeamId = config.teamId; }
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0:
@@ -207,68 +238,114 @@ function registerTools(server, client, config) {
                             })];
                     case 1:
                         boxscores = _b.sent();
-                        matchup = boxscores.find(function (entry) { return entry.homeTeamId === config.teamId || entry.awayTeamId === config.teamId; });
+                        matchup = boxscores.find(function (entry) { return entry.homeTeamId === targetTeamId || entry.awayTeamId === targetTeamId; });
                         if (!matchup) {
-                            return [2 /*return*/, new Map()];
+                            return [2 /*return*/, {
+                                    lineupsByTeam: new Map(),
+                                    opponentTeamId: null
+                                }];
                         }
-                        roster = matchup.homeTeamId === config.teamId ? matchup.homeRoster : matchup.awayRoster;
-                        return [2 /*return*/, new Map(roster.map(function (player) {
-                                var _a;
-                                return ([
-                                    player.id,
-                                    {
-                                        rosteredPosition: (_a = player.rosteredPosition) !== null && _a !== void 0 ? _a : null,
-                                        projectedPoints: calculatePointTotal(player.projectedPointBreakdown),
-                                        totalPoints: typeof player.totalPoints === 'number' ? Number(player.totalPoints.toFixed(2)) : null
-                                    }
-                                ]);
-                            }))];
+                        buildLineupMap = function (roster) { return new Map((roster !== null && roster !== void 0 ? roster : []).map(function (player) {
+                            var _a;
+                            return ([
+                                player.id,
+                                {
+                                    rosteredPosition: (_a = player.rosteredPosition) !== null && _a !== void 0 ? _a : null,
+                                    projectedPoints: calculatePointTotal(player.projectedPointBreakdown),
+                                    totalPoints: typeof player.totalPoints === 'number' ? Number(player.totalPoints.toFixed(2)) : null
+                                }
+                            ]);
+                        })); };
+                        homeLineup = buildLineupMap(matchup.homeRoster);
+                        awayLineup = buildLineupMap(matchup.awayRoster);
+                        opponentTeamId = matchup.homeTeamId === targetTeamId ? matchup.awayTeamId : matchup.homeTeamId;
+                        return [2 /*return*/, {
+                                lineupsByTeam: new Map([
+                                    [matchup.homeTeamId, homeLineup],
+                                    [matchup.awayTeamId, awayLineup]
+                                ]),
+                                opponentTeamId: typeof opponentTeamId === 'number' ? opponentTeamId : null
+                            }];
                     case 2:
                         _a = _b.sent();
-                        return [2 /*return*/, new Map()];
+                        return [2 /*return*/, {
+                                lineupsByTeam: new Map(),
+                                opponentTeamId: null
+                            }];
                     case 3: return [2 /*return*/];
                 }
             });
         });
     }
     function buildRosterSummary() {
-        return __awaiter(this, arguments, void 0, function (targetTeamId) {
-            var team, lineupMap, _a, roster;
+        return __awaiter(this, arguments, void 0, function (targetTeamId, options) {
+            var teams, _a, team, lineupMap, matchupContext, byeWeekByProTeam, _b, scoringPeriodId, roster;
+            var _c, _d, _e;
             if (targetTeamId === void 0) { targetTeamId = config.teamId; }
-            return __generator(this, function (_b) {
-                switch (_b.label) {
-                    case 0: return [4 /*yield*/, fetchTeam(targetTeamId)];
-                    case 1:
-                        team = (_b.sent()).team;
+            if (options === void 0) { options = {}; }
+            return __generator(this, function (_f) {
+                switch (_f.label) {
+                    case 0:
+                        if (!((_c = options.teams) !== null && _c !== void 0)) return [3 /*break*/, 1];
+                        _a = _c;
+                        return [3 /*break*/, 3];
+                    case 1: return [4 /*yield*/, fetchTeams()];
+                    case 2:
+                        _a = _f.sent();
+                        _f.label = 3;
+                    case 3:
+                        teams = _a;
+                        team = teams.find(function (entry) { return entry.id === targetTeamId; });
                         if (!team) {
                             throw new Error("Unable to locate team ".concat(targetTeamId, " for scoring period ").concat(config.scoringPeriodId, "."));
                         }
-                        if (!(targetTeamId === config.teamId)) return [3 /*break*/, 3];
-                        return [4 /*yield*/, fetchLineup()];
-                    case 2:
-                        _a = _b.sent();
-                        return [3 /*break*/, 4];
-                    case 3:
-                        _a = new Map();
-                        _b.label = 4;
+                        if (!options.lineupMap) return [3 /*break*/, 4];
+                        lineupMap = options.lineupMap;
+                        return [3 /*break*/, 7];
                     case 4:
-                        lineupMap = _a;
+                        if (!(targetTeamId === config.teamId)) return [3 /*break*/, 6];
+                        return [4 /*yield*/, fetchMatchupContext(targetTeamId)];
+                    case 5:
+                        matchupContext = _f.sent();
+                        lineupMap = (_d = matchupContext.lineupsByTeam.get(targetTeamId)) !== null && _d !== void 0 ? _d : new Map();
+                        return [3 /*break*/, 7];
+                    case 6:
+                        lineupMap = new Map();
+                        _f.label = 7;
+                    case 7:
+                        if (!((_e = options.byeWeekByProTeam) !== null && _e !== void 0)) return [3 /*break*/, 8];
+                        _b = _e;
+                        return [3 /*break*/, 10];
+                    case 8: return [4 /*yield*/, fetchProTeamByeWeekMap()];
+                    case 9:
+                        _b = _f.sent();
+                        _f.label = 10;
+                    case 10:
+                        byeWeekByProTeam = _b;
+                        scoringPeriodId = config.scoringPeriodId;
                         roster = team.roster.map(function (player) {
                             var _a, _b, _c, _d, _e;
                             var slotInfo = lineupMap.get(player.id);
                             var outlook = (_a = player.outlooksByWeek) === null || _a === void 0 ? void 0 : _a[String(config.scoringPeriodId)];
+                            var proTeamValue = (_b = player.proTeamAbbreviation) !== null && _b !== void 0 ? _b : player.proTeam;
+                            var proTeamId = typeof player.proTeamId === 'number' ? player.proTeamId : undefined;
+                            var mappedByeWeekNumber = proTeamId != null ? byeWeekByProTeam.get(proTeamId) : undefined;
+                            var byeWeekNumber = typeof mappedByeWeekNumber === 'number' ? mappedByeWeekNumber : undefined;
+                            var byeWeek = proTeamValue === 'Bye' || player.proTeam === 'Bye' || byeWeekNumber === scoringPeriodId;
                             return {
                                 id: player.id,
                                 name: player.fullName,
                                 defaultPosition: player.defaultPosition,
-                                rosteredPosition: (_b = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.rosteredPosition) !== null && _b !== void 0 ? _b : null,
-                                proTeam: (_c = player.proTeamAbbreviation) !== null && _c !== void 0 ? _c : player.proTeam,
+                                rosteredPosition: (_c = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.rosteredPosition) !== null && _c !== void 0 ? _c : null,
+                                proTeam: proTeamValue,
                                 availabilityStatus: player.availabilityStatus,
                                 injuryStatus: player.injuryStatus,
                                 isInjured: player.isInjured,
                                 outlook: outlook,
                                 projectedPoints: (_d = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.projectedPoints) !== null && _d !== void 0 ? _d : null,
-                                totalPoints: (_e = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.totalPoints) !== null && _e !== void 0 ? _e : null
+                                totalPoints: (_e = slotInfo === null || slotInfo === void 0 ? void 0 : slotInfo.totalPoints) !== null && _e !== void 0 ? _e : null,
+                                byeWeek: byeWeek,
+                                byeWeekNumber: byeWeekNumber !== null && byeWeekNumber !== void 0 ? byeWeekNumber : null
                             };
                         });
                         return [2 /*return*/, {
@@ -434,29 +511,58 @@ function registerTools(server, client, config) {
             }
         });
     }); });
-    server.tool('getMyRoster', function () { return __awaiter(_this, void 0, void 0, function () {
-        var rosterSummary;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0: return [4 /*yield*/, buildRosterSummary(config.teamId)];
+    server.tool('getMyTeamDetails', function () { return __awaiter(_this, void 0, void 0, function () {
+        var teams, byeWeekByProTeam, matchupContext, teamLineup, rosterSummary, opponentSummary, opponentLineup;
+        var _a, _b;
+        return __generator(this, function (_c) {
+            switch (_c.label) {
+                case 0: return [4 /*yield*/, fetchTeams()];
                 case 1:
-                    rosterSummary = _a.sent();
-                    return [2 /*return*/, buildToolResult(rosterSummary)];
+                    teams = _c.sent();
+                    return [4 /*yield*/, fetchProTeamByeWeekMap()];
+                case 2:
+                    byeWeekByProTeam = _c.sent();
+                    return [4 /*yield*/, fetchMatchupContext(config.teamId)];
+                case 3:
+                    matchupContext = _c.sent();
+                    teamLineup = (_a = matchupContext.lineupsByTeam.get(config.teamId)) !== null && _a !== void 0 ? _a : new Map();
+                    return [4 /*yield*/, buildRosterSummary(config.teamId, {
+                            lineupMap: teamLineup,
+                            teams: teams,
+                            byeWeekByProTeam: byeWeekByProTeam
+                        })];
+                case 4:
+                    rosterSummary = _c.sent();
+                    opponentSummary = null;
+                    if (!(typeof matchupContext.opponentTeamId === 'number')) return [3 /*break*/, 6];
+                    opponentLineup = (_b = matchupContext.lineupsByTeam.get(matchupContext.opponentTeamId)) !== null && _b !== void 0 ? _b : new Map();
+                    return [4 /*yield*/, buildRosterSummary(matchupContext.opponentTeamId, {
+                            lineupMap: opponentLineup,
+                            teams: teams,
+                            byeWeekByProTeam: byeWeekByProTeam
+                        })];
+                case 5:
+                    opponentSummary = _c.sent();
+                    _c.label = 6;
+                case 6: return [2 /*return*/, buildToolResult(__assign(__assign({}, rosterSummary), { opponent: opponentSummary }))];
             }
         });
     }); });
     server.tool('getPlayerStatus', {
         playerName: zod_1.z.string()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
-        var effectiveScoringPeriodId, rosterSummary, lowercaseQuery, player;
+        var effectiveScoringPeriodId, byeWeekByProTeam, rosterSummary, lowercaseQuery, player;
         var _c;
         var playerName = _b.playerName;
         return __generator(this, function (_d) {
             switch (_d.label) {
                 case 0:
                     effectiveScoringPeriodId = (_c = config.scoringPeriodId) !== null && _c !== void 0 ? _c : config.scoringPeriodId;
-                    return [4 /*yield*/, buildRosterSummary(config.teamId)];
+                    return [4 /*yield*/, fetchProTeamByeWeekMap()];
                 case 1:
+                    byeWeekByProTeam = _d.sent();
+                    return [4 /*yield*/, buildRosterSummary(config.teamId, { byeWeekByProTeam: byeWeekByProTeam })];
+                case 2:
                     rosterSummary = _d.sent();
                     lowercaseQuery = playerName.toLowerCase();
                     player = rosterSummary.roster.find(function (entry) { return entry.name.toLowerCase() === lowercaseQuery; });
@@ -480,16 +586,19 @@ function registerTools(server, client, config) {
         startDate: zod_1.z.string().regex(/^\d{8}$/, 'startDate must be in YYYYMMDD format').optional(),
         endDate: zod_1.z.string().regex(/^\d{8}$/, 'endDate must be in YYYYMMDD format').optional()
     }, function (_a) { return __awaiter(_this, [_a], void 0, function (_b) {
-        var derivedAbbreviation, rosterSummary, lowercaseQuery_1, player, counts_1, sorted, today, defaultStart, defaultEnd, games, filtered;
+        var derivedAbbreviation, byeWeekByProTeam, rosterSummary, lowercaseQuery_1, player, counts_1, sorted, today, defaultStart, defaultEnd, games, filtered;
         var _c, _d;
         var nflTeamAbbreviation = _b.nflTeamAbbreviation, playerName = _b.playerName, startDate = _b.startDate, endDate = _b.endDate;
         return __generator(this, function (_e) {
             switch (_e.label) {
                 case 0:
                     derivedAbbreviation = nflTeamAbbreviation;
-                    if (!(!derivedAbbreviation && (playerName || config.teamId))) return [3 /*break*/, 2];
-                    return [4 /*yield*/, buildRosterSummary(config.teamId)];
+                    if (!(!derivedAbbreviation && (playerName || config.teamId))) return [3 /*break*/, 3];
+                    return [4 /*yield*/, fetchProTeamByeWeekMap()];
                 case 1:
+                    byeWeekByProTeam = _e.sent();
+                    return [4 /*yield*/, buildRosterSummary(config.teamId, { byeWeekByProTeam: byeWeekByProTeam })];
+                case 2:
                     rosterSummary = _e.sent();
                     if (playerName) {
                         lowercaseQuery_1 = playerName.toLowerCase();
@@ -514,8 +623,8 @@ function registerTools(server, client, config) {
                         sorted = Array.from(counts_1.entries()).sort(function (a, b) { return b[1] - a[1]; });
                         derivedAbbreviation = (_d = sorted[0]) === null || _d === void 0 ? void 0 : _d[0];
                     }
-                    _e.label = 2;
-                case 2:
+                    _e.label = 3;
+                case 3:
                     if (!derivedAbbreviation) {
                         throw new Error('Unable to determine NFL team. Provide nflTeamAbbreviation, playerName, or teamId.');
                     }
@@ -526,7 +635,7 @@ function registerTools(server, client, config) {
                             startDate: startDate !== null && startDate !== void 0 ? startDate : defaultStart,
                             endDate: endDate !== null && endDate !== void 0 ? endDate : defaultEnd
                         })];
-                case 3:
+                case 4:
                     games = _e.sent();
                     filtered = games.filter(function (game) {
                         var _a, _b;

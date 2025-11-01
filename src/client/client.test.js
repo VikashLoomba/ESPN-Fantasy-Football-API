@@ -1155,5 +1155,59 @@ describe('Client', () => {
         });
       });
     });
+
+    describe('getProTeamSchedules', () => {
+      let client;
+      let seasonId;
+
+      beforeEach(() => {
+        seasonId = 2018;
+        client = new Client({ leagueId: 213213 });
+        jest.spyOn(axios, 'get').mockImplementation();
+        axios.get.mockReturnValue(q());
+      });
+
+      describe('when the seasonId is prior to 2018', () => {
+        test('throws an error', () => {
+          expect(() => client.getProTeamSchedules({ seasonId: 2017 })).toThrow();
+        });
+      });
+
+      describe('when the seasonId is 2018 or after', () => {
+        test('does not throw an error', () => {
+          expect(() => client.getProTeamSchedules({ seasonId })).not.toThrow();
+        });
+
+        test('calls axios.get with the correct params', () => {
+          const routeBase = `${seasonId}/segments/0/leagues/${client.leagueId}`;
+          const routeParams = '?view=proTeamSchedules_wl';
+          const route = `${routeBase}${routeParams}`;
+
+          const config = {};
+          jest.spyOn(client, '_buildAxiosConfig').mockReturnValue(config);
+          axios.get.mockReturnValue(q());
+
+          client.getProTeamSchedules({ seasonId });
+          expect(axios.get).toBeCalledWith(route, config);
+        });
+
+        describe('after the promise resolves', () => {
+          test('returns the pro team data from the response payload', async () => {
+            const response = {
+              data: {
+                settings: {
+                  proTeams: [{ id: 1, byeWeek: 5 }, { id: 2, byeWeek: 7 }]
+                }
+              }
+            };
+
+            axios.get.mockReturnValue(q(response));
+
+            const proTeams = await client.getProTeamSchedules({ seasonId });
+            expect(proTeams).toEqual(response.data.settings.proTeams);
+          });
+        });
+      });
+    });
   });
 });

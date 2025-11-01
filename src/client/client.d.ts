@@ -36,6 +36,10 @@ export interface LeagueInfoOptions {
   seasonId: number;
 }
 
+export interface ProTeamSchedulesOptions {
+  seasonId: number;
+}
+
 declare class Client {
   constructor(options?: ClientInitializationOptions);
 
@@ -62,6 +66,8 @@ declare class Client {
   getNFLGamesForPeriod(options: GamesForPeriodOptions): Promise<unknown>;
 
   getLeagueInfo(options: LeagueInfoOptions): Promise<unknown>;
+
+  getProTeamSchedules(options: ProTeamSchedulesOptions): Promise<unknown>;
 }
 
 export default Client;

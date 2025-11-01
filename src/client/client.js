@@ -285,6 +285,19 @@ class Client {
     ));
   }
 
+  getProTeamSchedules({ seasonId }) {
+    this.constructor._validateV3Params(seasonId, 'getProTeamSchedules');
+
+    const route = this.constructor._buildRoute({
+      base: `${seasonId}/segments/0/leagues/${this.leagueId}`,
+      params: '?view=proTeamSchedules_wl'
+    });
+
+    return axios.get(route, this._buildAxiosConfig()).then((response) => (
+      _.get(response.data, 'settings.proTeams', [])
+    ));
+  }
+
   _parseTeamResponse(responseData, seasonId, scoringPeriodId) {
     // Join member (owner) information with team data before dumping into builder
     const teams = _.get(responseData, 'teams');

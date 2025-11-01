@@ -20,6 +20,19 @@ interface ServerConfig {
   scoringPeriodId: number;
 }
 
+type LineupEntry = {
+  rosteredPosition: string | null;
+  projectedPoints: number | null;
+  totalPoints: number | null;
+};
+
+interface MatchupContext {
+  lineupsByTeam: Map<number, Map<number, LineupEntry>>;
+  opponentTeamId: number | null;
+}
+
+type ByeWeekMap = Map<number, number>;
+
 const REQUIRED_ENV_VARS: RequiredEnvVar[] = ['TEAM_ID', 'LEAGUE_ID', 'ESPN_SWID', 'ESPN_S2'];
 
 function loadConfiguration(): ServerConfig {
@@ -150,15 +163,34 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
     return teams as any[];
   }
 
-  async function fetchTeam(teamId: number) {
-    const teams = await fetchTeams();
-    return {
-      teams,
-      team: teams.find((entry) => entry.id === teamId)
-    };
+  let cachedProTeamByeWeeks: ByeWeekMap | null = null;
+
+  async function fetchProTeamByeWeekMap(): Promise<ByeWeekMap> {
+    if (cachedProTeamByeWeeks) {
+      return cachedProTeamByeWeeks;
+    }
+
+    try {
+      const proTeams = await client.getProTeamSchedules({
+        seasonId: config.seasonId
+      }) as Array<{ id?: number; byeWeek?: number }> | undefined;
+
+      const byeWeekMap: ByeWeekMap = new Map();
+      (proTeams ?? []).forEach((team) => {
+        if (team && typeof team.id === 'number' && typeof team.byeWeek === 'number') {
+          byeWeekMap.set(team.id, team.byeWeek);
+        }
+      });
+
+      cachedProTeamByeWeeks = byeWeekMap;
+      return byeWeekMap;
+    } catch {
+      cachedProTeamByeWeeks = new Map<number, number>();
+      return cachedProTeamByeWeeks;
+    }
   }
 
-  async function fetchLineup() {
+  async function fetchMatchupContext(targetTeamId: number = config.teamId): Promise<MatchupContext> {
     try {
       const matchupPeriodId = config.scoringPeriodId;
       const boxscores = await client.getBoxscoreForWeek({
@@ -168,16 +200,18 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
       }) as any[];
 
       const matchup = boxscores.find(
-        (entry) => entry.homeTeamId === config.teamId || entry.awayTeamId === config.teamId
+        (entry) => entry.homeTeamId === targetTeamId || entry.awayTeamId === targetTeamId
       );
 
       if (!matchup) {
-        return new Map<number, any>();
+        return {
+          lineupsByTeam: new Map<number, Map<number, LineupEntry>>(),
+          opponentTeamId: null
+        };
       }
 
-      const roster = matchup.homeTeamId === config.teamId ? matchup.homeRoster : matchup.awayRoster;
-      return new Map(
-        roster.map((player: { id: any; rosteredPosition: any; projectedPointBreakdown: Record<string, unknown> | undefined; totalPoints: number; }) => ([
+      const buildLineupMap = (roster: any[] | undefined) => new Map<number, LineupEntry>(
+        (roster ?? []).map((player: { id: number; rosteredPosition?: string; projectedPointBreakdown?: Record<string, unknown>; totalPoints?: number; }) => ([
           player.id,
           {
             rosteredPosition: player.rosteredPosition ?? null,
@@ -186,37 +220,72 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
           }
         ]))
       );
+
+      const homeLineup = buildLineupMap(matchup.homeRoster);
+      const awayLineup = buildLineupMap(matchup.awayRoster);
+      const opponentTeamId = matchup.homeTeamId === targetTeamId ? matchup.awayTeamId : matchup.homeTeamId;
+
+      return {
+        lineupsByTeam: new Map<number, Map<number, LineupEntry>>([
+          [matchup.homeTeamId, homeLineup],
+          [matchup.awayTeamId, awayLineup]
+        ]),
+        opponentTeamId: typeof opponentTeamId === 'number' ? opponentTeamId : null
+      };
     } catch {
-      return new Map<number, any>();
+      return {
+        lineupsByTeam: new Map<number, Map<number, LineupEntry>>(),
+        opponentTeamId: null
+      };
     }
   }
 
-  async function buildRosterSummary(targetTeamId: number = config.teamId) {
-    const { team } = await fetchTeam(targetTeamId);
+  async function buildRosterSummary(
+    targetTeamId: number = config.teamId,
+    options: { lineupMap?: Map<number, LineupEntry>; teams?: any[]; byeWeekByProTeam?: ByeWeekMap } = {}
+  ) {
+    const teams = options.teams ?? await fetchTeams();
+    const team = teams.find((entry) => entry.id === targetTeamId);
     if (!team) {
       throw new Error(`Unable to locate team ${targetTeamId} for scoring period ${config.scoringPeriodId}.`);
     }
 
-    const lineupMap = targetTeamId === config.teamId ?
-      await fetchLineup() :
-      new Map<number, { rosteredPosition: string | null; projectedPoints: number | null; totalPoints: number | null }>();
+    let lineupMap: Map<number, LineupEntry>;
+    if (options.lineupMap) {
+      lineupMap = options.lineupMap;
+    } else if (targetTeamId === config.teamId) {
+      const matchupContext = await fetchMatchupContext(targetTeamId);
+      lineupMap = matchupContext.lineupsByTeam.get(targetTeamId) ?? new Map<number, LineupEntry>();
+    } else {
+      lineupMap = new Map<number, LineupEntry>();
+    }
+
+    const byeWeekByProTeam = options.byeWeekByProTeam ?? await fetchProTeamByeWeekMap();
+    const scoringPeriodId = config.scoringPeriodId;
 
     const roster = team.roster.map((player: any) => {
       const slotInfo = lineupMap.get(player.id);
       const outlook = player.outlooksByWeek?.[String(config.scoringPeriodId)];
+      const proTeamValue = player.proTeamAbbreviation ?? player.proTeam;
+      const proTeamId = typeof player.proTeamId === 'number' ? player.proTeamId : undefined;
+      const mappedByeWeekNumber = proTeamId != null ? byeWeekByProTeam.get(proTeamId) : undefined;
+      const byeWeekNumber = typeof mappedByeWeekNumber === 'number' ? mappedByeWeekNumber : undefined;
+      const byeWeek = proTeamValue === 'Bye' || player.proTeam === 'Bye' || byeWeekNumber === scoringPeriodId;
 
       return {
         id: player.id,
         name: player.fullName,
         defaultPosition: player.defaultPosition,
         rosteredPosition: slotInfo?.rosteredPosition ?? null,
-        proTeam: player.proTeamAbbreviation ?? player.proTeam,
+        proTeam: proTeamValue,
         availabilityStatus: player.availabilityStatus,
         injuryStatus: player.injuryStatus,
         isInjured: player.isInjured,
         outlook,
         projectedPoints: slotInfo?.projectedPoints ?? null,
-        totalPoints: slotInfo?.totalPoints ?? null
+        totalPoints: slotInfo?.totalPoints ?? null,
+        byeWeek,
+        byeWeekNumber: byeWeekNumber ?? null
       };
     });
 
@@ -357,11 +426,33 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
   );
 
   server.tool(
-    'getMyRoster',
+    'getMyTeamDetails',
     async () => {
-      // const effectiveScoringPeriodId = scoringPeriodId ?? config.scoringPeriodId;
-      const rosterSummary = await buildRosterSummary(config.teamId);
-      return buildToolResult(rosterSummary);
+      const teams = await fetchTeams();
+      const byeWeekByProTeam = await fetchProTeamByeWeekMap();
+      const matchupContext = await fetchMatchupContext(config.teamId);
+
+      const teamLineup = matchupContext.lineupsByTeam.get(config.teamId) ?? new Map<number, LineupEntry>();
+      const rosterSummary = await buildRosterSummary(config.teamId, {
+        lineupMap: teamLineup,
+        teams,
+        byeWeekByProTeam
+      });
+
+      let opponentSummary: Awaited<ReturnType<typeof buildRosterSummary>> | null = null;
+      if (typeof matchupContext.opponentTeamId === 'number') {
+        const opponentLineup = matchupContext.lineupsByTeam.get(matchupContext.opponentTeamId) ?? new Map<number, LineupEntry>();
+        opponentSummary = await buildRosterSummary(matchupContext.opponentTeamId, {
+          lineupMap: opponentLineup,
+          teams,
+          byeWeekByProTeam
+        });
+      }
+
+      return buildToolResult({
+        ...rosterSummary,
+        opponent: opponentSummary
+      });
     }
   );
 
@@ -372,7 +463,8 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
     },
     async ({ playerName }) => {
       const effectiveScoringPeriodId = config.scoringPeriodId ?? config.scoringPeriodId;
-      const rosterSummary = await buildRosterSummary(config.teamId);
+      const byeWeekByProTeam = await fetchProTeamByeWeekMap();
+      const rosterSummary = await buildRosterSummary(config.teamId, { byeWeekByProTeam });
 
       const lowercaseQuery = playerName.toLowerCase();
       let player = rosterSummary.roster.find((entry: { name: string; }) => entry.name.toLowerCase() === lowercaseQuery);
@@ -409,8 +501,10 @@ function registerTools(server: McpServer, client: ClientInstance, config: Server
       let derivedAbbreviation = nflTeamAbbreviation;
 
       if (!derivedAbbreviation && (playerName || config.teamId)) {
+        const byeWeekByProTeam = await fetchProTeamByeWeekMap();
         const rosterSummary = await buildRosterSummary(
-          config.teamId
+          config.teamId,
+          { byeWeekByProTeam }
         );
 
         if (playerName) {
